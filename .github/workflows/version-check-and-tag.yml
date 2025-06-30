@@ -37,7 +37,7 @@ jobs:
     - name: Extract version from pyproject.toml
       id: pyproject_version
       run: |
-        VERSION=$(grep -Po 'version\s*=\s*["\']([^"\']+)["\']' pyproject.toml | sed 's/.*["\'"'"']\([^"'"'"']*\)["\'"'"'].*/\1/')
+        VERSION=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
         echo "pyproject_version=$VERSION" >> $GITHUB_OUTPUT
         echo "pyproject.toml version: $VERSION"
 
@@ -48,7 +48,7 @@ jobs:
 
         if [ "$CHANGELOG_VERSION" != "$PYPROJECT_VERSION" ]; then
           echo "Version mismatch detected. Updating pyproject.toml from $PYPROJECT_VERSION to $CHANGELOG_VERSION"
-          sed -i "s/version\s*=\s*[\"']*[^\"']*[\"']*/version = \"$CHANGELOG_VERSION\"/" pyproject.toml
+          sed -i "s/^version = .*/version = \"$CHANGELOG_VERSION\"/" pyproject.toml
 
           # Configure git
           git config --local user.email "action@github.com"
