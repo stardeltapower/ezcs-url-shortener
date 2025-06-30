@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2025-06-30
+
+### Fixed
+
+- Fixed sync_version.py script to work with pyproject.toml instead of setup.py
+- Fixed ruff target-version configuration to use proper Python version (py38)
+- Fixed pytest minversion to use proper pytest version (6.0)
+- Improved version synchronization to only update project version, not tool configurations
+
+### Changed
+
+- Enhanced sync_version.py with proper regex patterns for version extraction and updating
+
 ## [0.1.0] - 2025-06-30
 
 ### Added
@@ -23,5 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation with usage examples
 - GitHub Actions workflows for CI/CD
 
-[Unreleased]: https://github.com/rsmith/ezcs-url-shortener/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/rsmith/ezcs-url-shortener/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/rsmith/ezcs-url-shortener/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/rsmith/ezcs-url-shortener/releases/tag/v0.1.0

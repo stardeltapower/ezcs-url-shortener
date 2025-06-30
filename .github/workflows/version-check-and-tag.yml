@@ -34,34 +34,34 @@ jobs:
         echo "changelog_version=$VERSION" >> $GITHUB_OUTPUT
         echo "Changelog version: $VERSION"
 
-    - name: Extract version from setup.py
-      id: setup_version
+    - name: Extract version from pyproject.toml
+      id: pyproject_version
       run: |
-        VERSION=$(grep -Po "version=['\"]([^'\"]+)" setup.py | cut -d"'" -f2 | cut -d'"' -f2)
-        echo "setup_version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Setup.py version: $VERSION"
+        VERSION=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
+        echo "pyproject_version=$VERSION" >> $GITHUB_OUTPUT
+        echo "pyproject.toml version: $VERSION"
 
-    - name: Sync setup.py version
+    - name: Sync pyproject.toml version
       run: |
         CHANGELOG_VERSION="${{ steps.changelog_version.outputs.changelog_version }}"
-        SETUP_VERSION="${{ steps.setup_version.outputs.setup_version }}"
+        PYPROJECT_VERSION="${{ steps.pyproject_version.outputs.pyproject_version }}"
 
-        if [ "$CHANGELOG_VERSION" != "$SETUP_VERSION" ]; then
-          echo "Version mismatch detected. Updating setup.py from $SETUP_VERSION to $CHANGELOG_VERSION"
-          sed -i "s/version=[\"']*[^\"']*[\"']*/version=\"$CHANGELOG_VERSION\"/" setup.py
+        if [ "$CHANGELOG_VERSION" != "$PYPROJECT_VERSION" ]; then
+          echo "Version mismatch detected. Updating pyproject.toml from $PYPROJECT_VERSION to $CHANGELOG_VERSION"
+          sed -i "s/^version = .*/version = \"$CHANGELOG_VERSION\"/" pyproject.toml
 
           # Configure git
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
 
           # Add and commit the change
-          git add setup.py
-          git commit -m "chore: sync setup.py version to $CHANGELOG_VERSION"
+          git add pyproject.toml
+          git commit -m "chore: sync pyproject.toml version to $CHANGELOG_VERSION"
 
           # Push the change
           git push origin HEAD:${{ github.ref_name }}
 
-          echo "setup.py updated and committed"
+          echo "pyproject.toml updated and committed"
         else
           echo "Versions are already in sync: $CHANGELOG_VERSION"
         fi
