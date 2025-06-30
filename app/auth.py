@@ -46,7 +46,7 @@ def get_api_key_from_db(db: Session, api_key: str) -> Optional[ApiKey]:
         return None
 
     # Get all active API keys and check each one
-    api_keys = db.query(ApiKey).filter(ApiKey.is_active == True).all()
+    api_keys = db.query(ApiKey).filter(ApiKey.is_active).all()
 
     for key_record in api_keys:
         if verify_api_key(api_key, key_record.key_hash):
@@ -55,8 +55,13 @@ def get_api_key_from_db(db: Session, api_key: str) -> Optional[ApiKey]:
     return None
 
 
+def get_api_key_header(x_api_key: Optional[str] = Header(None, alias="X-API-Key")):
+    """Get API key from header"""
+    return x_api_key
+
+
 def get_current_api_key(
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"), db: Session = Depends(get_db)
+    x_api_key: str = Depends(get_api_key_header), db: Session = Depends(get_db)
 ) -> ApiKey:
     """Get current API key from header"""
     if not x_api_key:
@@ -69,7 +74,12 @@ def get_current_api_key(
     return api_key
 
 
-def verify_admin_token(x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token")) -> bool:
+def get_admin_token(x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token")):
+    """Get admin token from header"""
+    return x_admin_token
+
+
+def verify_admin_token(x_admin_token: str = Depends(get_admin_token)) -> bool:
     """Verify admin token"""
     if not x_admin_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin token required")

@@ -61,7 +61,9 @@ def list_urls(
 
 @router.get("/{url_id}", response_model=UrlResponse)
 def get_url(
-    url_id: int, db: Session = Depends(get_db), current_key: ApiKey = Depends(get_current_api_key)
+    url_id: int,
+    db: Session = Depends(get_db),
+    current_key: ApiKey = Depends(get_current_api_key),
 ):
     """Get URL by ID"""
     url = db.query(Url).filter(Url.id == url_id, Url.api_key_id == current_key.id).first()
@@ -114,7 +116,9 @@ def update_url(
 
 @router.delete("/{url_id}")
 def delete_url(
-    url_id: int, db: Session = Depends(get_db), current_key: ApiKey = Depends(get_current_api_key)
+    url_id: int,
+    db: Session = Depends(get_db),
+    current_key: ApiKey = Depends(get_current_api_key),
 ):
     """Delete URL"""
     url = db.query(Url).filter(Url.id == url_id, Url.api_key_id == current_key.id).first()
