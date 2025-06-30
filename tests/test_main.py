@@ -1,4 +1,5 @@
 from app.config import settings
+from app.main import app as main_app
 from app.models import Url
 
 
@@ -44,7 +45,7 @@ class TestMainEndpoints:
             data = response.json()
             assert "openapi" in data
             assert "info" in data
-            assert data["info"]["title"] == "URL Shortener API"
+            assert data["info"]["title"] == main_app.title
         else:
             # Production: OpenAPI schema should be disabled (404)
             assert response.status_code == 404
