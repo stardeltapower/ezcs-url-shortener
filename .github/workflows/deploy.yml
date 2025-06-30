@@ -1,0 +1,71 @@
+name: Deploy FastAPI URL Shortener via SCP
+
+on:
+  workflow_run:
+    workflows: ["Version Check and Tag"]
+    types:
+      - completed
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Copy FastAPI files to VPS
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.VPS_SSH_KEY }}
+        port: ${{ secrets.VPS_PORT }}
+        source: "./**"
+        target: "/var/www/url-shortener"
+
+    - name: Setup Python, install dependencies & deploy FastAPI
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.VPS_SSH_KEY }}
+        port: ${{ secrets.VPS_PORT }}
+        script: |
+          cd /var/www/url-shortener
+
+          # Create virtual environment if it doesn't exist
+          if [ ! -d "venv" ]; then
+            python3 -m venv venv
+          fi
+
+          # Activate virtual environment and install dependencies
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+          # Run database migrations
+          alembic upgrade head
+
+          # Copy nginx configuration (replace YOUR_DOMAIN with actual domain)
+          sudo sed "s/YOUR_DOMAIN/${{ secrets.DOMAIN_NAME }}/g" deployment/nginx-site.conf > /tmp/nginx-site.conf
+          sudo mv /tmp/nginx-site.conf /etc/nginx/sites-available/${{ secrets.DOMAIN_NAME }}
+          sudo ln -sf /etc/nginx/sites-available/${{ secrets.DOMAIN_NAME }} /etc/nginx/sites-enabled/
+
+          # Test nginx configuration
+          sudo nginx -t
+
+          # Reload nginx
+          sudo systemctl reload nginx
+
+          # Set up systemd service
+          sudo cp deployment/url-shortener.service /etc/systemd/system/
+          sudo systemctl daemon-reload
+          sudo systemctl enable url-shortener
+          sudo systemctl restart url-shortener
+
+          # Check service status
+          sudo systemctl status url-shortener

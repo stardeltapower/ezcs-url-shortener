@@ -1,0 +1,112 @@
+name: Version Check and Tag
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.changelog_version.outputs.changelog_version }}
+      is-new-version: ${{ steps.check-version.outputs.is-new-version }}
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Need full history for version comparison
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Extract version from CHANGELOG.md
+      id: changelog_version
+      run: |
+        VERSION=$(grep -m 1 -Po "## \[\K[0-9]+\.[0-9]+\.[0-9]+" CHANGELOG.md)
+        echo "changelog_version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Changelog version: $VERSION"
+
+    - name: Extract version from setup.py
+      id: setup_version
+      run: |
+        VERSION=$(grep -Po "version=['\"]([^'\"]+)" setup.py | cut -d"'" -f2 | cut -d'"' -f2)
+        echo "setup_version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Setup.py version: $VERSION"
+
+    - name: Sync setup.py version
+      run: |
+        CHANGELOG_VERSION="${{ steps.changelog_version.outputs.changelog_version }}"
+        SETUP_VERSION="${{ steps.setup_version.outputs.setup_version }}"
+
+        if [ "$CHANGELOG_VERSION" != "$SETUP_VERSION" ]; then
+          echo "Version mismatch detected. Updating setup.py from $SETUP_VERSION to $CHANGELOG_VERSION"
+          sed -i "s/version=[\"']*[^\"']*[\"']*/version=\"$CHANGELOG_VERSION\"/" setup.py
+
+          # Configure git
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+          # Add and commit the change
+          git add setup.py
+          git commit -m "chore: sync setup.py version to $CHANGELOG_VERSION"
+
+          # Push the change
+          git push origin HEAD:${{ github.ref_name }}
+
+          echo "setup.py updated and committed"
+        else
+          echo "Versions are already in sync: $CHANGELOG_VERSION"
+        fi
+
+    - name: Check version increase on PR
+      if: github.event_name == 'pull_request'
+      run: |
+        # Get the version from main branch
+        git checkout origin/main
+        MAIN_VERSION=$(grep -m 1 -Po "## \[\K[0-9]+\.[0-9]+\.[0-9]+" CHANGELOG.md)
+
+        # Switch back to the PR branch
+        git checkout ${{ github.event.pull_request.head.sha }}
+        PR_VERSION="${{ steps.changelog_version.outputs.changelog_version }}"
+
+        # Compare versions
+        if [ "$(printf '%s\n' "$MAIN_VERSION" "$PR_VERSION" | sort -V | head -n1)" == "$PR_VERSION" ] && [ "$MAIN_VERSION" != "$PR_VERSION" ]; then
+          echo "ERROR: Version must be greater than $MAIN_VERSION"
+          exit 1
+        fi
+
+        echo "Version check passed: $PR_VERSION >= $MAIN_VERSION"
+
+    - name: Check if version is new
+      id: check-version
+      if: github.event_name == 'push'
+      run: |
+        VERSION="${{ steps.changelog_version.outputs.changelog_version }}"
+
+        # Check if tag already exists
+        if git tag -l | grep -q "^v$VERSION$"; then
+          echo "Tag v$VERSION already exists"
+          echo "is-new-version=false" >> $GITHUB_OUTPUT
+        else
+          echo "New version detected: $VERSION"
+          echo "is-new-version=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create Tag
+      if: github.event_name == 'push' && steps.check-version.outputs.is-new-version == 'true'
+      run: |
+        VERSION="${{ steps.changelog_version.outputs.changelog_version }}"
+
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git tag -a "v$VERSION" -m "Release v$VERSION"
+        git push origin "v$VERSION"
+        echo "Created and pushed tag v$VERSION"
