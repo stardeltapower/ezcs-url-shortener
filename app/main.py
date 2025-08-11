@@ -79,7 +79,7 @@ def redirect_short_url(short_url: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Short URL has expired")
 
     logger.info(f"Redirecting {short_url} to {url.original_url}")
-    return RedirectResponse(url=str(url.original_url))
+    return RedirectResponse(url=str(url.original_url), status_code=307)
 
 
 @app.get("/api/health")
