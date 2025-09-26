@@ -1,8 +1,10 @@
 import logging
+import time
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import DisconnectionError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -62,12 +64,45 @@ def root():
     return RedirectResponse(url=settings.REDIRECT_URL)
 
 
+def _lookup_url_with_retry(db: Session, short_url: str, max_retries: int = 3) -> Url:
+    """Lookup URL with retry logic for connection issues"""
+    for attempt in range(max_retries):
+        try:
+            return db.query(Url).filter(Url.short_url == short_url).first()
+        except (DisconnectionError, OperationalError) as e:
+            error_msg = str(e).lower()
+            # Check if it's a connection-related error we should retry
+            retry_conditions = [
+                "mysql server has gone away",
+                "broken pipe",
+                "connection lost",
+                "lost connection"
+            ]
+
+            should_retry = any(condition in error_msg for condition in retry_conditions)
+
+            if should_retry and attempt < max_retries - 1:
+                logger.warning(f"Database connection error (attempt {attempt + 1}): {e}")
+                time.sleep(0.1 * (2 ** attempt))  # Exponential backoff
+                continue
+            else:
+                logger.error(f"Database lookup failed after {attempt + 1} attempts: {e}")
+                raise
+
+
 @app.get("/{short_url}")
 def redirect_short_url(short_url: str, db: Session = Depends(get_db)):
     """Redirect to the original URL using the short URL"""
     logger.debug(f"Looking up short URL: {short_url}")
 
-    url = db.query(Url).filter(Url.short_url == short_url).first()
+    try:
+        url = _lookup_url_with_retry(db, short_url)
+    except Exception as e:
+        logger.error(f"Failed to lookup {short_url}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service temporarily unavailable"
+        ) from e
 
     if not url:
         logger.warning(f"Short URL not found: {short_url}")
@@ -79,18 +114,38 @@ def redirect_short_url(short_url: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Short URL has expired")
 
     logger.info(f"Redirecting {short_url} to {url.original_url}")
-    return RedirectResponse(url=str(url.original_url))
+    return RedirectResponse(url=str(url.original_url), status_code=307)
 
 
 @app.get("/api/health")
-def health_check():
-    """Health check endpoint"""
-    return {
+def health_check(db: Session = Depends(get_db)):
+    """Health check endpoint with database connectivity test"""
+    health_status = {
         "status": "healthy",
         "message": "URL Shortener API is running",
         "environment": settings.ENVIRONMENT,
         "debug": settings.debug,
+        "database": {"status": "unknown"}
     }
+
+    # Test database connectivity
+    try:
+        # Simple query to test database connection
+        db.execute("SELECT 1")
+        health_status["database"]["status"] = "connected"
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        health_status["status"] = "unhealthy"
+        health_status["database"]["status"] = "disconnected"
+        health_status["database"]["error"] = str(e)
+
+        # Return 503 Service Unavailable if database is down
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=health_status
+        ) from e
+
+    return health_status
 
 
 if __name__ == "__main__":
