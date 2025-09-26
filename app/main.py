@@ -5,11 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
+from app.cache import get_cache_service
 from app.config import settings
 from app.database import engine, get_db
-from app.models import Base, Url
+from app.models import Base
 from app.routers import api_keys, urls
-from app.utils import is_url_expired
 
 # Configure logging based on environment
 logging.basicConfig(
@@ -63,34 +63,62 @@ def root():
 
 
 @app.get("/{short_url}")
-def redirect_short_url(short_url: str, db: Session = Depends(get_db)):
-    """Redirect to the original URL using the short URL"""
+def redirect_short_url(
+    short_url: str,
+    db: Session = Depends(get_db),
+    cache: get_cache_service = Depends(get_cache_service),
+):
+    """Redirect to the original URL using the short URL with intelligent caching"""
     logger.debug(f"Looking up short URL: {short_url}")
 
-    url = db.query(Url).filter(Url.short_url == short_url).first()
+    try:
+        # Try cache first (includes background refresh logic)
+        url_data = cache.get_url(db, short_url)
+    except Exception as e:
+        logger.error(f"Error while looking up {short_url}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service temporarily unavailable",
+        ) from e
 
-    if not url:
+    if not url_data:
         logger.warning(f"Short URL not found: {short_url}")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Short URL not found")
 
-    # Check if URL has expired
-    if is_url_expired(url):
-        logger.warning(f"Expired short URL accessed: {short_url}")
-        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Short URL has expired")
-
-    logger.info(f"Redirecting {short_url} to {url.original_url}")
-    return RedirectResponse(url=str(url.original_url), status_code=307)
+    original_url = url_data["original_url"]
+    logger.info(f"Redirecting {short_url} to {original_url}")
+    return RedirectResponse(url=str(original_url), status_code=307)
 
 
 @app.get("/api/health")
-def health_check():
-    """Health check endpoint"""
-    return {
+def health_check(
+    db: Session = Depends(get_db), cache: get_cache_service = Depends(get_cache_service)
+):
+    """Health check endpoint with database and cache status"""
+    health_status = {
         "status": "healthy",
         "message": "URL Shortener API is running",
         "environment": settings.ENVIRONMENT,
         "debug": settings.debug,
+        "database": {"status": "unknown"},
+        "cache": cache.get_stats(),
     }
+
+    # Test database connectivity
+    try:
+        # Simple query to test database connection
+        db.execute("SELECT 1")
+        health_status["database"]["status"] = "connected"
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        health_status["status"] = "unhealthy"
+        health_status["database"]["status"] = "disconnected"
+        health_status["database"]["error"] = str(e)
+
+        # Return 503 Service Unavailable if database is down
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=health_status) from e
+
+    return health_status
 
 
 if __name__ == "__main__":

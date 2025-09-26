@@ -16,6 +16,12 @@ class Settings:
     ADMIN_TOKEN: str = os.getenv("ADMIN_TOKEN", "admin-secret-token-change-this")
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
 
+    # Cache settings (in-memory cache)
+    CACHE_TTL: int = int(os.getenv("CACHE_TTL", "3600"))  # 1 hour default
+    CACHE_REFRESH_AHEAD: int = int(os.getenv("CACHE_REFRESH_AHEAD", "300"))  # 5 minutes
+    CACHE_MAX_SIZE: int = int(os.getenv("CACHE_MAX_SIZE", "10000"))  # Max cached URLs
+    ENABLE_CACHE: bool = os.getenv("ENABLE_CACHE", "true").lower() == "true"
+
     # Environment-specific settings
     @property
     def is_production(self) -> bool:

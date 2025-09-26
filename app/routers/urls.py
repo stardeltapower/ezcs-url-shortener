@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_api_key
+from app.cache import get_cache_service
 from app.database import get_db
 from app.models import ApiKey, Url
 from app.schemas import UrlCreate, UrlListResponse, UrlResponse, UrlUpdate
@@ -95,12 +96,16 @@ def update_url(
     url_data: UrlUpdate,
     db: Session = Depends(get_db),
     current_key: ApiKey = Depends(get_current_api_key),
+    cache: get_cache_service = Depends(get_cache_service),
 ):
     """Update URL"""
     url = db.query(Url).filter(Url.id == url_id, Url.api_key_id == current_key.id).first()
 
     if not url:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="URL not found")
+
+    # Invalidate cache for this URL
+    cache.invalidate_url(url.short_url)
 
     # Update fields if provided
     if url_data.original_url is not None:
@@ -119,6 +124,7 @@ def delete_url(
     url_id: int,
     db: Session = Depends(get_db),
     current_key: ApiKey = Depends(get_current_api_key),
+    cache: get_cache_service = Depends(get_cache_service),
 ):
     """Delete URL"""
     url = db.query(Url).filter(Url.id == url_id, Url.api_key_id == current_key.id).first()
@@ -126,7 +132,29 @@ def delete_url(
     if not url:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="URL not found")
 
+    # Invalidate cache for this URL
+    cache.invalidate_url(url.short_url)
+
     db.delete(url)
     db.commit()
 
     return {"message": "URL deleted successfully"}
+
+
+@router.get("/cache/stats")
+def get_cache_stats(
+    current_key: ApiKey = Depends(get_current_api_key),
+    cache: get_cache_service = Depends(get_cache_service),
+):
+    """Get cache statistics (requires valid API key)"""
+    return cache.get_stats()
+
+
+@router.delete("/cache/clear")
+def clear_cache(
+    current_key: ApiKey = Depends(get_current_api_key),
+    cache: get_cache_service = Depends(get_cache_service),
+):
+    """Clear all cache entries (requires valid API key)"""
+    cache.clear()
+    return {"message": "Cache cleared successfully"}

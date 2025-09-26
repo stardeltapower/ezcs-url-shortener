@@ -40,10 +40,10 @@ jobs:
         run: |
           # Lowercase repository name for container registry
           REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          
+
           # For URL shortener, always use production tags on main branch
           IMAGE_NAME="ghcr.io/${REPO_NAME}"
-          
+
           # Get version from the completed workflow
           if [ -f "CHANGELOG.md" ]; then
             VERSION=$(grep -m 1 -Po "## \[\K[0-9]+\.[0-9]+\.[0-9]+" CHANGELOG.md)
@@ -51,12 +51,12 @@ jobs:
           else
             IMAGE_TAG="${{ github.sha }}"
           fi
-          
+
           echo "image-name=$IMAGE_NAME" >> $GITHUB_OUTPUT
           echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
           echo "full-image=$IMAGE_NAME:$IMAGE_TAG" >> $GITHUB_OUTPUT
           echo "deploy-image=$IMAGE_NAME:$IMAGE_TAG" >> $GITHUB_OUTPUT
-          
+
           echo "Building container image: $IMAGE_NAME:$IMAGE_TAG"
 
       - name: Create Dockerfile
@@ -73,7 +73,7 @@ jobs:
 
           # Copy requirements first for better layer caching
           COPY requirements.txt ./
-          
+
           # Install Python dependencies
           RUN pip install --no-cache-dir --upgrade pip && \
               pip install --no-cache-dir -r requirements.txt
@@ -134,19 +134,19 @@ jobs:
             CONTAINER_NAME='url-shortener-test'
             DOCKER_DIR='/srv/docker/primary-services'
             GH_SHA='${{ github.sha }}'
-            
+
             echo "🚀 Deploying URL Shortener container to $(hostname -I)"
             echo "📦 Container: $CONTAINER_NAME"
             echo "📁 Docker Directory: $DOCKER_DIR"
             echo "📦 Image: $IMAGE_NAME"
-            
+
             # Create docker directory
             sudo mkdir -p $DOCKER_DIR
             cd $DOCKER_DIR
 
             # Login to GitHub Container Registry
             echo "🔐 Logging into GitHub Container Registry..."
-            
+
             if [ -z "$GH_TOKEN" ]; then
               echo "❌ ERROR: PAT_TOKEN is empty!"
               exit 1
@@ -176,10 +176,10 @@ jobs:
 
             # Start new container using docker-compose
             echo "🚀 Starting new URL Shortener container..."
-            
+
             # Update the docker-compose to use the new image
             sed -i "s|image: ghcr.io/.*ezcs-url-shortener.*|image: $IMAGE_NAME|" docker-compose.yml || echo "Could not update docker-compose image"
-            
+
             # Start the container with the test profile
             docker-compose --profile test up -d url-shortener-test
 
